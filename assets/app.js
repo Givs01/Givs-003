@@ -248,7 +248,7 @@
   }
 
   function footer() {
-    const text = (cfg.FOOTER_TEXT || '© {year} CRDF, CEPT University').replace('{year}', new Date().getFullYear());
+    const text = (cfg.FOOTER_TEXT || '© {year} CWAS,CRDF, CEPT University').replace('{year}', new Date().getFullYear());
     return h('footer', { class: 'fixed inset-x-0 bottom-0 z-30 flex h-10 items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-4 text-xs text-slate-500 backdrop-blur sm:px-6 print:hidden' },
       h('span', { class: 'truncate' }, text),
       h('span', { class: 'hidden shrink-0 sm:inline' }, APP));
