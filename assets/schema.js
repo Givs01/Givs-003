@@ -10,7 +10,7 @@
 (function () {
   'use strict';
 
-  const MAX_PER_TYPE = 5000;        // facilities of one type
+  const MAX_PER_TYPE = 500;        // facilities of one type
   const MAX_CONNECTIONS = 2000;    // electricity connections per ULB
 
   // City profile rows B6:B14

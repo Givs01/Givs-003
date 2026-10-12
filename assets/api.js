@@ -19,7 +19,16 @@
     try { t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
   }
 
+  // Tells the page how many requests are running (drives the progress bar).
+  let pending = 0;
+  const signal = d => { pending += d; window.dispatchEvent(new CustomEvent('api:activity', { detail: { pending } })); };
+
   async function call(action, payload) {
+    signal(1);
+    try { return await request(action, payload); } finally { signal(-1); }
+  }
+
+  async function request(action, payload) {
     if (!configured) throw Object.assign(new Error('The portal is not connected to its server yet.'), { code: 'CONFIG' });
     const req = { action, token: getToken(), payload: payload || {} };
     let r, res;

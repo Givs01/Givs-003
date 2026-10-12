@@ -92,12 +92,27 @@
     clearTimeout(toast.t);
     toast.t = setTimeout(() => t.remove(), 4500);
   }
+  const spinner = cls => h('span', { class: 'inline-block animate-spin rounded-full border-2 border-current border-r-transparent ' + (cls || 'size-4'), 'aria-hidden': 'true' });
+
+  /** Button loading state: spinner + label while a request runs. */
   function busy(btn, on, label) {
     if (!btn) return;
     btn.disabled = on;
-    if (on) { btn.dataset.label = btn.textContent; btn.textContent = label || 'Saving…'; }
-    else if (btn.dataset.label) btn.textContent = btn.dataset.label;
+    btn.setAttribute('aria-busy', String(on));
+    if (on) {
+      if (!btn._orig) btn._orig = Array.from(btn.childNodes);
+      btn.replaceChildren(spinner(), label || 'Saving…');
+    } else if (btn._orig) {
+      btn.replaceChildren(...btn._orig);
+      btn._orig = null;
+    }
   }
+
+  /* Thin progress bar under the header whenever the server is being called. */
+  window.addEventListener('api:activity', ev => {
+    const bar = document.getElementById('progress');
+    if (bar) bar.hidden = ev.detail.pending === 0;
+  });
   const isLocked = () => !!(state.profile && state.profile.status === 'submitted');
   const countSaved = () => { let c = 0; for (let i = 1; i <= state.profile.connections; i++) if (state.facilities[i]) c++; return c; };
   const linkedTo = key => Object.values(state.facilities).filter(c => (c.facility_types || []).indexOf(key) > -1).length;
@@ -131,6 +146,7 @@
     }
     if (!Api.configured) return renderNotConfigured();
     if (Api.hasToken()) {
+      renderLoading('Loading your data…');
       try {
         state.user = await Api.call('me');
         await loadData();
@@ -150,11 +166,10 @@
 
   /* ================= auth screens ================= */
   function authLayout(content) {
-    root.replaceChildren(h('div', { class: 'grid min-h-dvh lg:grid-cols-2' },
+    state.navOpen = false;
+    root.replaceChildren(header(false), footer(), h('div', { class: 'grid min-h-dvh pt-16 pb-10 lg:grid-cols-2' },
       h('aside', { class: 'relative hidden flex-col justify-between overflow-hidden bg-sky-950 p-12 text-white lg:flex' },
-        h('div', { class: 'flex items-center gap-3' },
-          h('span', { class: 'grid size-10 place-items-center rounded-xl bg-sky-800' }, icon('bolt', 'size-5 text-sky-400')),
-          h('span', { class: 'text-lg font-semibold' }, APP)),
+        h('span'),
         h('div', { class: 'max-w-md' },
           h('h1', { class: 'text-4xl font-semibold leading-tight tracking-tight' }, 'Energy use of WASH and SWM facilities'),
           h('div', { class: 'mt-6 flex flex-wrap gap-2' },
@@ -194,10 +209,14 @@
       try {
         state.user = await Api.login(user.value.trim(), pass.value);
         pass.value = '';
+        renderLoading('Signing in…');
         await loadData();
         state.view = landing();
         renderApp();
-      } catch (e) { err.textContent = e.message; pass.value = ''; pass.focus(); busy(btn, false); }
+      } catch (e) {
+        if (!form.isConnected) { Api.clearToken(); state.user = null; return renderLogin(e.message); }   // failed while loading data
+        err.textContent = e.message; pass.value = ''; pass.focus(); busy(btn, false);
+      }
     });
     authLayout(form);
     user.focus();
@@ -218,14 +237,30 @@
     renderApp();
   }
 
-  function header() {
-    return h('header', { class: 'fixed inset-x-0 top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6 print:hidden' },
+  function header(withMenu) {
+    return h('header', { class: 'fixed inset-x-0 top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-4 backdrop-blur sm:px-6 print:hidden' },
       h('div', { class: 'flex min-w-0 items-center gap-3' },
-        h('button', { class: 'btn btn-ghost size-10 p-0 lg:hidden', type: 'button', 'aria-label': state.navOpen ? 'Close menu' : 'Open menu', 'aria-expanded': String(state.navOpen),
+        withMenu === false ? null : h('button', { class: 'btn btn-ghost size-10 p-0 lg:hidden', type: 'button', 'aria-label': state.navOpen ? 'Close menu' : 'Open menu', 'aria-expanded': String(state.navOpen),
           onclick: () => { state.navOpen = !state.navOpen; renderApp(); } }, icon(state.navOpen ? 'close' : 'menu')),
         h('span', { class: 'hidden size-9 shrink-0 place-items-center rounded-lg bg-sky-800 sm:grid' }, icon('bolt', 'size-5 text-sky-400')),
         h('span', { class: 'truncate text-base font-semibold tracking-tight text-sky-950 sm:text-lg' }, APP)),
       logo('h-10 w-auto max-w-40 object-contain'));
+  }
+
+  function footer() {
+    const text = (cfg.FOOTER_TEXT || '© {year} CRDF, CEPT University').replace('{year}', new Date().getFullYear());
+    return h('footer', { class: 'fixed inset-x-0 bottom-0 z-30 flex h-10 items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-4 text-xs text-slate-500 backdrop-blur sm:px-6 print:hidden' },
+      h('span', { class: 'truncate' }, text),
+      h('span', { class: 'hidden shrink-0 sm:inline' }, APP));
+  }
+
+  /** Shown while data loads (page refresh, sign-in). */
+  function renderLoading(message) {
+    const bar = cls => h('div', { class: 'animate-pulse rounded-2xl bg-slate-200/70 ' + cls });
+    root.replaceChildren(header(false), footer(),
+      h('main', { class: 'mx-auto max-w-6xl px-4 pt-24 pb-16 sm:px-6 lg:px-8', 'aria-busy': 'true' },
+        h('div', { class: 'mb-8 flex items-center gap-3 text-sm font-medium text-sky-900', role: 'status' }, spinner('size-5 text-sky-700'), message || 'Loading…'),
+        h('div', { class: 'space-y-4' }, bar('h-8 w-56'), h('div', { class: 'grid grid-cols-3 gap-4' }, bar('h-24'), bar('h-24'), bar('h-24')), bar('h-40'), bar('h-64'))));
   }
 
   function sidebar() {
@@ -238,7 +273,7 @@
     const initials = (state.user.ulb_name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
 
     return h('aside', {
-      class: 'fixed bottom-0 left-0 top-16 z-40 flex w-72 flex-col bg-sky-950 transition-transform duration-200 lg:translate-x-0 print:hidden ' +
+      class: 'fixed bottom-10 left-0 top-16 z-40 flex w-72 flex-col bg-sky-950 transition-transform duration-200 lg:translate-x-0 print:hidden ' +
         (state.navOpen ? 'translate-x-0' : '-translate-x-full')
     },
       h('nav', { class: 'flex-1 space-y-1 overflow-y-auto p-4', 'aria-label': 'Assessment' },
@@ -269,9 +304,10 @@
 
     root.replaceChildren(...[
       header(),
-      state.navOpen ? h('div', { class: 'fixed inset-0 top-16 z-30 bg-sky-950/40 lg:hidden', onclick: () => { state.navOpen = false; renderApp(); } }) : null,
+      footer(),
+      state.navOpen ? h('div', { class: 'fixed inset-x-0 top-16 bottom-10 z-30 bg-sky-950/40 lg:hidden', onclick: () => { state.navOpen = false; renderApp(); } }) : null,
       sidebar(),
-      h('main', { id: 'main', class: 'pt-16 lg:pl-72' },
+      h('main', { id: 'main', class: 'pt-16 pb-10 lg:pl-72' },
         h('div', { class: 'mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8' }, banner(), view))
     ].filter(Boolean));
     const t = root.querySelector('main h1');
@@ -575,7 +611,7 @@
     const back = () => go('consumption');
 
     const form = h('form', { class: 'space-y-6', novalidate: true }, summary, sections, billCard,
-      h('div', { class: 'sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8' },
+      h('div', { class: 'sticky bottom-10 z-10 -mx-4 flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8' },
         delBtn, h('button', { class: 'btn btn-secondary', type: 'button', onclick: back }, isLocked() ? 'Back' : 'Cancel'), saveBtn));
 
     form.addEventListener('submit', async ev => {
